@@ -1,0 +1,247 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Process runtime calculator</title>
+
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.min.css'>
+<style>
+:root {
+  font-family: Noto Sans Mono;
+  font-size: 16px;
+}
+
+body {
+  padding: 1rem 3rem;
+}
+</style>
+  </head>
+  <body>
+    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between">
+      <h2>Process runtime calculator</h2>
+      <p style="color: #444444">By the students of Group 4, 3rd Year Section A</p>
+    </div>
+    <div id='blockly_workspace' style='height: 30rem; width: 100%; background-color: red'></div>
+    <p style='padding-top: 0.3rem'>This tool calculates the runtime of individual processes given a model and runtime of the whole algorithm. <b>Use the blocks to model your processes.</b></p>
+    <p style='line-height: 1.5rem; font-size: 1.1rem' id='result'></p>
+
+    <script type='module'>
+      import Blockly from 'https://cdn.jsdelivr.net/npm/blockly/+esm'
+      import * as MathJS from 'https://cdn.jsdelivr.net/npm/mathjs/+esm'
+
+      const div_result = document.querySelector('#result')
+
+      let startBlocksCount = 0
+
+      Blockly.Extensions.register('process_id_extension',
+        function() {
+          this.getInput('PROCESS_IDS')
+            .appendField(new Blockly.FieldDropdown(
+              function() {
+                const ids = ['select', 'A', 'B', 'C', 'D', 'E']
+                let options = []
+                for (let i = 0; i <= startBlocksCount; i++) {
+                  options.push([ids[i], ids[i]])
+                }
+                return options;
+              }), 'ID');
+        });
+
+      Blockly.Blocks['custom_start'] = {
+        init: function() {
+          this.jsonInit({
+            "type": "custom_start",
+            "message0": "an algorithm that takes %1 nsec",
+            "args0": [
+              {
+                "type": "input_value",
+                "name": "TIME_TAKEN",
+              }
+            ],
+            "message1": "has %1",
+            "args1": [
+              {"type": "input_statement", "name": "STATEMENTS"}
+            ],
+            'input': 'Number',
+          })
+        }
+      }
+
+      Blockly.Blocks['custom_process'] = {
+        init: function() {
+          this.jsonInit({
+            "type": "custom_process",
+            "message0": "process %1",
+            "args0": [
+              {
+                "type": "input_dummy",
+                "name": "PROCESS_IDS",
+              }
+            ],
+            "extensions": [
+              "process_id_extension"
+            ],
+            'previousStatement': null,
+            'nextStatement': null,
+            'colour': 60,
+          })
+        }
+      }
+
+      const blocklyWorkspace = Blockly.inject('blockly_workspace', {
+        'renderer': 'thrasos',
+        'toolbox': {
+          'kind': 'flyoutToolbox',
+          'contents': [
+            {
+              'kind': 'block',
+              'type': 'custom_start',
+              "inputs": {
+                "TIME_TAKEN": {
+                  "shadow": {
+                    "type": "math_number",
+                    "fields": {
+                      "NUM": 0
+                    }
+                  }
+                },
+              }
+            },
+            {
+              'kind': 'block',
+              'type': 'custom_process'
+            },
+            {
+              'kind': 'block',
+              'type': 'controls_repeat_ext',
+              "inputs": {
+                "TIMES": {
+                  "shadow": {
+                    "type": "math_number",
+                    "fields": {
+                      "NUM": 1
+                    }
+                  }
+                },
+              }
+            },
+          ],
+        },
+        'maxInstances': {
+          'custom_start': 5
+        }
+      })
+
+      const blocklyGenerator = new Blockly.Generator('mathly')
+
+      blocklyGenerator.scrub_ = function(block, code, thisOnly) {
+        const nextBlock =
+            block.nextConnection && block.nextConnection.targetBlock();
+        if (nextBlock && !thisOnly) {
+          return code + ' ' + blocklyGenerator.blockToCode(nextBlock);
+        }
+        return code;
+      };
+
+      blocklyGenerator.forBlock['custom_start'] = function(block, generator) {
+        const time_taken = generator.valueToCode(block, 'TIME_TAKEN', 0)
+        const statements = generator.statementToCode(block, 'STATEMENTS')
+        return statements + '|' + `${time_taken}` + ',';
+      };
+
+      blocklyGenerator.forBlock['custom_process'] = function(block, generator) {
+        const id = block.getFieldValue('ID');
+        return `${id}`;
+      };
+
+      blocklyGenerator.forBlock['controls_repeat_ext'] = function(block, generator) {
+        const statements = [];
+
+        const times = generator.valueToCode(block, 'TIMES', 0)
+        for (let j = 0; j < times; j++) {
+          const statement = generator.statementToCode(block, 'DO')
+          statements.push(statement);
+        }
+
+/*
+        const valueString = values.join(',\n');
+        const indentedValueString =
+            generator.prefixLines(valueString, generator.INDENT);
+        const codeString = '[\n' + indentedValueString + '\n]';
+        */
+        return statements.join(' ')
+      };
+
+      blocklyGenerator.forBlock['math_number'] = function(block, generator) {
+        const value = block.getFieldValue("NUM");
+        return [`${value}`, 0];
+      };
+
+      blocklyWorkspace.addChangeListener(e => {
+        if (e['recordUndo']) {
+          if (e['type'] == 'create' && e['json']['type'] == 'custom_start') {
+            startBlocksCount++
+          }
+          if (e['type'] == 'delete' && e['oldJson']['type'] == 'custom_start') {
+            startBlocksCount--
+          }
+
+          try {
+            console.log(e)
+            const codegenResult = blocklyGenerator.workspaceToCode(blocklyWorkspace)
+
+            if (codegenResult.includes('select')) throw new Error('select error');
+
+            const matrix = codegenResult.split(',').slice(0, -1).map(row => row.trim().split('|'))
+
+            const tmpmatrix = MathJS.transpose(matrix)
+            const a = tmpmatrix[tmpmatrix.length - 1].map(str => parseInt(str))
+
+            const m = MathJS.zeros(startBlocksCount, startBlocksCount)
+
+            console.log(matrix)
+            console.log(startBlocksCount)
+            console.log(m)
+            console.log(a)
+
+            const ids = ['A', 'B', 'C', 'D', 'E']
+            const m2 = m._data.map((row, u) => row.map((cell, v) => {
+              if (matrix[u][0].length === 0) throw new Error('empty error');
+              return matrix[u].join("").split(ids[v]).length - 1
+            }))
+
+            console.log(m2)
+            //const m = matrix
+
+            const ans_matrix = MathJS.lusolve(m2, a)
+            //console.log(ans)
+            div_result.innerHTML = ''
+            ans_matrix.forEach((ans, i) => {
+              div_result.innerHTML += '<b>Process ' + ids[i] + ' </b>takes <b>' + parseFloat(ans).toFixed(2) + ' nsec</b>.'
+              if (ans < 0) div_result.innerHTML += '<span style="color: red"> (Negative!) Please check your input.</span>'
+              div_result.innerHTML += '<br>'
+            })
+          } catch (e) {
+            if (e.message == 'empty error') {
+            div_result.innerHTML = '<span style="color: red">Please put processes in all the algorithms.</span>'
+            } else if (e.message == 'select error') {
+            div_result.innerHTML = '<span style="color: red">Please select a process from the drop-down menu.</span>'
+            } else if (e.message.includes('singular')) {
+            div_result.innerHTML = '<span style="color: red">The model can\'t be solved. Please check your inputs.</span>'
+            }
+            console.error(e);
+          }
+
+/*
+          const ids = ['a', 'b', 'c', 'd', 'e']
+          let blockOptions = []
+          for (let i = 0; i < startBlocksCount; i++) {
+            blockOptions.push([ids[i], ids[i]])
+          }
+          */
+        }
+      });
+    </script>
+  </body>
+</html>
