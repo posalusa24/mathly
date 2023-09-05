@@ -191,7 +191,7 @@ body {
           try {
             console.log(e)
             const codegenResult = blocklyGenerator.workspaceToCode(blocklyWorkspace)
-
+            if (blocklyWorkspace.getBlocksOfType('custom_start').length == 0) throw new Error('no start error');[
             if (codegenResult.includes('select')) throw new Error('select error');
 
             const matrix = codegenResult.split(',').slice(0, -1).map(row => row.trim().split('|'))
@@ -230,6 +230,8 @@ body {
             div_result.innerHTML = '<span style="color: red">Please select a process from the drop-down menu.</span>'
             } else if (e.message.includes('singular')) {
             div_result.innerHTML = '<span style="color: red">The model can\'t be solved. Please check your inputs.</span>'
+            } else if (e.message = 'no start error') {
+            div_result.innerHTML = '<span style="color: red">Please place a black process block first.</span>'
             }
             console.error(e);
           }
